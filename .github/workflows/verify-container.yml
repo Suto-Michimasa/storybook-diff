@@ -1,0 +1,30 @@
+name: Verify in container
+on:
+  push:
+    branches: [verify/container]
+jobs:
+  run:
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: [before, after]
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+    steps:
+      - name: Write fake storybook builds
+        run: |
+          node -e '
+          const fs = require("fs");
+          for (const [dir, color] of [["/tmp/base", "#000"], ["/tmp/head", "#f00"]]) {
+            fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(dir + "/index.json", JSON.stringify({ v: 5, entries: { "button--primary": { type: "story", id: "button--primary", title: "Button", name: "Primary", importPath: "./src/Button.stories.tsx" } } }));
+            fs.writeFileSync(dir + "/iframe.html", "<!doctype html><html><body><div id=\"storybook-root\"></div><script>const root=document.getElementById(\"storybook-root\");const preview={currentRender:null,channel:{emit(e,p){if(e===\"setCurrentStory\")render(p.storyId);}}};window.__STORYBOOK_PREVIEW__=preview;function render(id){preview.currentRender={id,phase:\"rendering\"};setTimeout(()=>{root.innerHTML=\"<div style=\\\"width:100px;height:40px;background:" + color + "\\\"></div>\";preview.currentRender={id,phase:\"completed\"};},10);}render(new URLSearchParams(location.search).get(\"id\"));</script></body></html>");
+          }'
+      - if: matrix.ref == 'before'
+        uses: hayashikun/storybook-diff@f8e1ab077f7ba439710ca7c609bb0f151ab09124
+        with: { base-static: /tmp/base, head-static: /tmp/head, out: /tmp/out }
+      - if: matrix.ref == 'after'
+        uses: Suto-Michimasa/storybook-diff@c9bbb69c3b1bdbe23be69720b4d191fb3619bee2
+        with: { base-static: /tmp/base, head-static: /tmp/head, out: /tmp/out }
+      - run: cat /tmp/out/summary.md && ls /tmp/out/shots
